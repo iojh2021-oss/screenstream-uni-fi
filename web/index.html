@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ScreenStream — کنترل از راه دور گوشی</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #0d0f14; color: #e9e2cf;
+    font-family: -apple-system, 'Segoe UI', Tahoma, sans-serif;
+    display: flex; flex-direction: column; align-items: center; padding: 20px;
+  }
+  h1 { font-size: 18px; letter-spacing: 1px; color: #c9a768; margin-bottom: 4px; }
+  #status { font-size: 13px; opacity: 0.7; margin-bottom: 16px; }
+  #setup {
+    display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 360px;
+  }
+  input, button {
+    padding: 12px; border-radius: 8px; border: 1px solid #3a3f4d;
+    background: #171922; color: #e9e2cf; font-size: 15px;
+  }
+  button {
+    background: #c9a768; color: #171922; font-weight: 700; border: none;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; }
+  #videoWrap {
+    position: relative; margin-top: 16px; max-width: 100%;
+    border: 2px solid #3a3f4d; border-radius: 12px; overflow: hidden;
+    display: none;
+  }
+  video { display: block; max-width: 100%; max-height: 80vh; touch-action: none; }
+  .navControls { display: flex; gap: 8px; margin-top: 10px; }
+  .navControls button { flex: 1; padding: 9px; font-size: 13px; }
+  #hint { font-size: 12px; opacity: 0.55; margin-top: 10px; text-align: center; max-width: 360px; }
+</style>
+</head>
+<body>
+  <h1>ScreenStream</h1>
+  <div id="status">آماده اتصال</div>
+
+  <div id="setup">
+    <input id="serverUrl" placeholder="آدرس سرور signaling (wss://...)" />
+    <input id="roomCode" placeholder="کد اتاق (مثلاً ABC123)" />
+    <button id="connectBtn">اتصال به گوشی</button>
+  </div>
+
+  <div id="videoWrap">
+    <video id="remoteVideo" autoplay playsinline></video>
+  </div>
+  <div class="navControls">
+    <button data-action="back">⟵ بازگشت</button>
+    <button data-action="home">⌂ خانه</button>
+    <button data-action="recents">▣ برنامه‌ها</button>
+  </div>
+
+  <div id="hint">
+    بعد از اتصال، روی تصویر ضربه بزن تا روی گوشی به‌عنوان لمس ثبت بشه.
+    برای سواپ (کشیدن انگشت)، لمس رو نگه دار و بکش.
+  </div>
+
+<script>
+const statusEl = document.getElementById('status');
+const setupEl = document.getElementById('setup');
+const videoWrap = document.getElementById('videoWrap');
+const video = document.getElementById('remoteVideo');
+const connectBtn = document.getElementById('connectBtn');
+
+let ws = null;
+let pc = null;
+let dataChannel = null;
+let pendingIceCandidates = [];
+let controlsInitialized = false;
+
+function setStatus(text) {
+  statusEl.textContent = text;
+}
+
+function connect() {
+  const url = document.getElementById('serverUrl').value.trim();
+  const room = document.getElementById('roomCode').value.trim();
+  if (!url || !room) {
+    alert('آدرس سرور و کد اتاق رو وارد کن');
+    return;
+  }
+
+  connectBtn.disabled = true;
+  setStatus('در حال اتصال به سرور...');
+
+  ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'join', room, role: 'viewer' }));
+  };
+
+  ws.onmessage = async (event) => {
+    const msg = JSON.parse(event.data);
+
+    if (msg.type === 'joined') {
+      setStatus('منتظر اتصال گوشی...');
+    } else if (msg.type === 'peer-joined') {
+      setStatus('گوشی پیدا شد، در حال برقراری استریم...');
+    } else if (msg.type === 'peer-left') {
+      setStatus('گوشی قطع شد.');
+      videoWrap.style.display = 'none';
+    } else if (msg.type === 'offer') {
+      await handleOffer(msg.sdp);
+    } else if (msg.type === 'ice-candidate') {
+      if (msg.candidate) {
+        if (pc && pc.remoteDescription) {
+          try { await pc.addIceCandidate(msg.candidate); } catch (e) { console.warn(e); }
+        } else {
+          pendingIceCandidates.push(msg.candidate);
+        }
+      }
+    }
+  };
+
+  ws.onerror = () => setStatus('خطا در اتصال به سرور signaling');
+  ws.onclose = () => setStatus('اتصال به سرور قطع شد');
+}
+
+async function handleOffer(sdp) {
+  pc = new RTCPeerConnection({
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  });
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
+    }
+  };
+
+  pc.ontrack = (event) => {
+    video.srcObject = event.streams[0];
+    videoWrap.style.display = 'block';
+    setStatus('متصل — در حال استریم');
+    setupControlEvents();
+  };
+
+  pc.ondatachannel = (event) => {
+    dataChannel = event.channel;
+    dataChannel.onopen = () => setStatus('متصل — کنترل آماده است');
+  };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+  for (const candidate of pendingIceCandidates.splice(0)) {
+    try { await pc.addIceCandidate(candidate); } catch (e) { console.warn(e); }
+  }
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  ws.send(JSON.stringify({ type: 'answer', sdp: pc.localDescription }));
+}
+
+document.querySelectorAll('[data-action]').forEach((button) => {
+  button.addEventListener('click', () => sendControl({ type: button.dataset.action }));
+});
+
+function sendControl(payload) {
+  if (dataChannel && dataChannel.readyState === 'open') {
+    dataChannel.send(JSON.stringify(payload));
+  }
+}
+
+// Maps a pointer event on the <video> element to normalized [0..1] coords,
+// since the phone's actual screen resolution may differ from the video size.
+function normalizedCoords(evt) {
+  const rect = video.getBoundingClientRect();
+  const x = (evt.clientX - rect.left) / rect.width;
+  const y = (evt.clientY - rect.top) / rect.height;
+  return { x: Math.min(Math.max(x, 0), 1), y: Math.min(Math.max(y, 0), 1) };
+}
+
+function setupControlEvents() {
+  if (controlsInitialized) return;
+  controlsInitialized = true;
+  let dragStart = null;
+  let dragging = false;
+
+  video.addEventListener('pointerdown', (evt) => {
+    evt.preventDefault();
+    video.setPointerCapture?.(evt.pointerId);
+    dragStart = normalizedCoords(evt);
+    dragging = false;
+  });
+
+  video.addEventListener('pointermove', (evt) => {
+    if (!dragStart) return;
+    dragging = true;
+  });
+
+  video.addEventListener('pointercancel', () => { dragStart = null; dragging = false; });
+
+  video.addEventListener('pointerup', (evt) => {
+    evt.preventDefault();
+    if (!dragStart) return;
+    const end = normalizedCoords(evt);
+    if (dragging) {
+      sendControl({ type: 'swipe', x1: dragStart.x, y1: dragStart.y, x2: end.x, y2: end.y, duration: 200 });
+    } else {
+      sendControl({ type: 'tap', x: end.x, y: end.y });
+    }
+    dragStart = null;
+    dragging = false;
+  });
+}
+
+connectBtn.addEventListener('click', connect);
+</script>
+</body>
+</html>
