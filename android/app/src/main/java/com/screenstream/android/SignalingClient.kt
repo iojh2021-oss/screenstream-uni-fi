@@ -66,12 +66,12 @@ class SignalingClient(
     fun sendIceCandidate(candidate: JSONObject) = send("ice-candidate", candidate)
 
     private fun send(type: String, payload: JSONObject) {
-        socket?.send(JSONObject().apply {
+        val message = JSONObject(payload.toString()).apply {
             put("type", type)
             put("room", room)
             put("role", "phone")
-            put("payload", payload)
-        }.toString())
+        }
+        socket?.send(message.toString())
     }
 
     fun close() {
