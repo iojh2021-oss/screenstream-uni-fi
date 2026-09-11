@@ -17,8 +17,14 @@ android {
 
     buildTypes {
         release {
+            // CI/debug signing makes this test release directly installable.
+            // Use a private production keystore before Play Store distribution.
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 
