@@ -2,7 +2,7 @@ name: Android Build
 
 on:
   push:
-    branches: [main, android-client]
+    branches: [main, android-client, android-play-ready]
     paths:
       - 'android/**'
       - '.github/workflows/android-build.yml'
@@ -49,15 +49,31 @@ jobs:
       - name: Build installable test release APK
         run: gradle assembleRelease --no-daemon
 
+      - name: Build Play-ready App Bundle
+        run: gradle bundleRelease --no-daemon
+
+      - name: Verify package and permissions
+        run: |
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$AAPT" dump badging app/build/outputs/apk/release/app-release.apk | grep -F "package: name='com.screenstream.android' versionCode='2' versionName='1.0.1'"
+          if "$AAPT" dump permissions app/build/outputs/apk/release/app-release.apk | grep -Fq "android.permission.POST_NOTIFICATIONS"; then
+            echo "Unexpected POST_NOTIFICATIONS permission found"
+            exit 1
+          fi
+
       - name: Verify APK signatures
         run: |
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose app/build/outputs/apk/release/app-release.apk
           $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload APKs
+      - name: Verify App Bundle signature
+        run: jarsigner -verify app/build/outputs/bundle/release/app-release.aab
+
+      - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: screenstream-android-apks
+          name: screenstream-android-play-ready
           path: |
             android/app/build/outputs/apk/debug/*.apk
             android/app/build/outputs/apk/release/*.apk
+            android/app/build/outputs/bundle/release/*.aab
