@@ -11,14 +11,15 @@ android {
         applicationId = "com.screenstream.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
     }
 
     buildTypes {
         release {
-            // CI/debug signing makes this test release directly installable.
-            // Use a private production keystore before Play Store distribution.
+            // Temporary CI/test signing so the release APK is directly installable.
+            // Production Google Play distribution must use a dedicated upload key
+            // and Google Play App Signing.
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(
