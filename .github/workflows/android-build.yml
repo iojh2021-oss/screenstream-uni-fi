@@ -32,6 +32,17 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Locate Android cmdline-tools and add to PATH
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          CMDLINE_TOOLS_BIN=$(find "$ANDROID_HOME" -type d -path "*cmdline-tools*/bin" | sort -r | head -n1)
+          if [ -z "$CMDLINE_TOOLS_BIN" ]; then
+            echo "cmdline-tools not found, cannot continue"
+            exit 1
+          fi
+          echo "Found: $CMDLINE_TOOLS_BIN"
+          echo "$CMDLINE_TOOLS_BIN" >> "$GITHUB_PATH"
+
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses > /dev/null || true
 
