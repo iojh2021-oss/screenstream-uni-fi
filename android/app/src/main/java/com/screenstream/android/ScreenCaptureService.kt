@@ -143,6 +143,10 @@ class ScreenCaptureService : Service() {
             val configuration = PeerConnection.RTCConfiguration(
                 listOf(
                     PeerConnection.IceServer.builder("stun:stun.l.google.com:19302")
+                        .createIceServer(),
+                    PeerConnection.IceServer.builder("turn:92.114.51.178:3478")
+                        .setUsername("screenstream")
+                        .setPassword("4c9c09ff791151af51d39d48960d8afa")
                         .createIceServer()
                 )
             ).apply {
